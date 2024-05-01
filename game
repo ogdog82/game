@@ -1,0 +1,294 @@
+import pygame
+import pytmx
+import json
+
+# Initialize Pygame
+pygame.init()
+
+# Set up the game window
+WINDOW_WIDTH = 800
+WINDOW_HEIGHT = 600
+screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+pygame.display.set_caption("Roguelike RPG")
+
+# Load the TMX map
+try:
+    tmx_data = pytmx.util_pygame.load_pygame("C:\\Users\\matth\\AppData\\Local\\Programs\\Python\\Python39\\test\\New folder\\pygame\\my_map.tmx")
+except FileNotFoundError:
+    print("Error: TMX map file not found.")
+    pygame.quit()
+    exit()
+# Player class
+# Player class
+class Player(pygame.sprite.Sprite):
+    def __init__(self):
+        super().__init__()
+        self.image = pygame.Surface([32, 32])
+        self.image.fill((255, 255, 255))
+        self.rect = self.image.get_rect()
+        self.rect.y = 33 * tmx_data.tileheight
+        self.rect.x = 4 * tmx_data.tilewidth
+        
+        # Place the player at the specified starting position
+        
+        self.speed = 4
+        self.sprint_speed = 8
+        self.crouch_speed = 2
+        self.gravity = 1
+        self.vsp = 0
+        self.jump_speed = -12
+        self.max_health = 100
+        self.health = self.max_health
+        self.is_sprinting = False
+        self.is_crouching = False
+
+    def update(self):
+        keys = pygame.key.get_pressed()
+        new_x = self.rect.x
+        new_y = self.rect.y
+
+        # Horizontal movement
+        if keys[pygame.K_LEFT] and keys[pygame.K_UP]:
+            new_x -= self.speed * 0.707  # Diagonal movement
+            new_y -= self.speed * 0.707
+        elif keys[pygame.K_LEFT] and keys[pygame.K_DOWN]:
+            new_x -= self.speed * 0.707
+            new_y += self.speed * 0.707
+        elif keys[pygame.K_RIGHT] and keys[pygame.K_UP]:
+            new_x += self.speed * 0.707
+            new_y -= self.speed * 0.707
+        elif keys[pygame.K_RIGHT] and keys[pygame.K_DOWN]:
+            new_x += self.speed * 0.707
+            new_y += self.speed * 0.707
+        elif keys[pygame.K_LEFT]:
+            new_x -= self.speed
+        elif keys[pygame.K_RIGHT]:
+            new_x += self.speed
+
+        # Sprinting
+        if keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]:
+            self.is_sprinting = True
+            new_x *= self.sprint_speed / self.speed
+            new_y *= self.sprint_speed / self.speed
+        else:
+            self.is_sprinting = False
+
+        # Crouching
+        if keys[pygame.K_LCTRL] or keys[pygame.K_RCTRL]:
+            self.is_crouching = True
+            new_x *= self.crouch_speed / self.speed
+            new_y *= self.crouch_speed / self.speed
+        else:
+            self.is_crouching = False
+
+        # Jumping
+        if keys[pygame.K_UP] and self.vsp == 0:
+            self.vsp = self.jump_speed
+
+        # Apply gravity
+        if self.vsp < 10:
+            self.vsp += self.gravity
+
+        new_y += self.vsp
+
+        # Check for collisions with ground tiles
+
+        # Get the tile coordinates
+        tile_x = int(self.rect.x // tmx_data.tilewidth)
+        tile_y = int(self.rect.y // tmx_data.tileheight)
+
+        # Check if the tile at the player's position is a ground tile
+        is_colliding = False
+        for obj in tmx_data.get_layer_by_name("ground"):
+            if obj.x <= self.rect.x <= obj.x + obj.width and obj.y <= self.rect.y <= obj.y + obj.height:
+                is_colliding = True
+                break
+
+        if is_colliding:
+            # Collision detected, don't update player position
+            if self.vsp > 0:
+                # Landed on a tile, reset vertical speed
+                self.vsp = 0
+        else:
+            self.rect.x = new_x
+            self.rect.y = new_y
+
+    def take_damage(self, amount):
+        self.health -= amount
+        if self.health <= 0:
+            self.health = 0
+            # Player has died, handle game over or respawn
+class Enemy(pygame.sprite.Sprite):
+    def __init__(self, x, y):
+        super().__init__()
+        self.image = pygame.Surface([32, 32])
+        self.image.fill((255, 0, 0))
+        self.rect = self.image.get_rect()
+        self.rect.x = x
+        self.rect.y = y
+        self.speed = 2
+        self.max_health = 50
+        self.health = self.max_health
+
+    def update(self):
+        # Add enemy movement logic here
+        pass
+
+# Spawn enemies
+enemies = []
+for enemy_x, enemy_y in [(200, 300), (400, 400), (600, 200)]:
+    enemy = Enemy(enemy_x, enemy_y)
+    enemies.append(enemy)
+class Projectile(pygame.sprite.Sprite):
+    def __init__(self, x, y, direction):
+        super().__init__()
+        self.image = pygame.Surface([16, 16])
+        self.image.fill((0, 255, 0))
+        self.rect = self.image.get_rect()
+        self.rect.x = x
+        self.rect.y = y
+        self.speed = 10
+        self.direction = direction
+
+    def update(self):
+        if self.direction == "left":
+            self.rect.x -= self.speed
+        elif self.direction == "right":
+            self.rect.x += self.speed
+        elif self.direction == "up":
+            self.rect.y -= self.speed
+        elif self.direction == "down":
+            self.rect.y += self.speed
+
+        # Check for collisions with enemies
+        for enemy in enemies:
+            if self.rect.colliderect(enemy.rect):
+                # Projectile has hit an enemy, apply damage or other effects
+                print("Projectile has hit an enemy!")
+                self.kill()
+class Item(pygame.sprite.Sprite):
+    def __init__(self, x, y, item_type):
+        super().__init__()
+        self.image = pygame.Surface([16, 16])
+        self.image.fill((255, 255, 0))
+        self.rect = self.image.get_rect()
+        self.rect.x = x
+        self.rect.y = y
+        self.item_type = item_type
+
+# Spawn items
+items = []
+item_x = 300
+item_y = 400
+item = Item(item_x, item_y, "health_potion")
+items.append(item)
+def draw_health_bar(surface, x, y, width, height, percent):
+    fill = (width * percent) // 100
+    outline_rect = pygame.Rect(x, y, width, height)
+    fill_rect = pygame.Rect(x, y, fill, height)
+    pygame.draw.rect(surface, (255, 0, 0), fill_rect)
+    pygame.draw.rect(surface, (255, 255, 255), outline_rect, 2)
+
+def save_game(player, enemies, items):
+    game_data = {
+        "player_x": player.rect.x,
+        "player_y": player.rect.y,
+        "player_health": player.health,
+        "enemy_positions": [(enemy.rect.x, enemy.rect.y) for enemy in enemies],
+        "item_positions": [(item.rect.x, item.rect.y, item.item_type) for item in items]
+    }
+    with open("game_save.json", "w") as f:
+        json.dump(game_data, f)
+
+def load_game():
+    try:
+        with open("game_save.json", "r") as f:
+            game_data = json.load(f)
+        player.health = game_data["player_health"]
+        enemies.clear()
+        for enemy_x, enemy_y in game_data["enemy_positions"]:
+            enemy = Enemy(enemy_x, enemy_y)
+            enemies.append(enemy)
+        items.clear()
+        for item_x, item_y, item_type in game_data["item_positions"]:
+            item = Item(item_x, item_y, item_type)
+            items.append(item)
+    except FileNotFoundError:
+        print("No saved game found.")
+player = Player()
+# Game loop
+running = True
+projectiles = []
+while running:
+    # Handle events
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+
+    # Clear the screen
+    screen.fill((0, 0, 0))
+
+    # Draw the map
+    for layer in tmx_data.visible_layers:
+        if isinstance(layer, pytmx.TiledTileLayer):
+            for x, y, gid in layer:
+                tile = tmx_data.get_tile_image_by_gid(gid)
+                if tile:
+                    screen.blit(tile, (x * tmx_data.tilewidth, y * tmx_data.tileheight))
+
+    # Draw the player
+    screen.blit(player.image, player.rect)
+
+    # Draw the enemies
+    for enemy in enemies:
+        screen.blit(enemy.image, enemy.rect)
+
+    # Draw the projectiles
+    for projectile in projectiles:
+        screen.blit(projectile.image, projectile.rect)
+
+    # Draw the items
+    for item in items:
+        screen.blit(item.image, item.rect)
+
+    # Update the player
+    player.update()
+
+    # Update the enemies
+    for enemy in enemies:
+        enemy.update()
+
+    # Update the projectiles
+    for projectile in projectiles:
+        projectile.update()
+
+    # Check for collisions between player and enemies
+    for enemy in enemies:
+        if player.rect.colliderect(enemy.rect):
+            player.take_damage(1)
+
+    # Check for collisions between player and items
+    for item in items:
+        if player.rect.colliderect(item.rect):
+            # Player has picked up an item, add it to their inventory
+            if item.item_type == "health_potion":
+                player.health = min(player.health + 25, player.max_health)
+            items.remove(item)
+
+    # Display player health on the screen
+    health_text = f"Health: {player.health}/{player.max_health}"
+    health_surface = pygame.font.Font(None, 36).render(health_text, True, (255, 255, 255))
+    screen.blit(health_surface, (10, 10))
+    draw_health_bar(screen, 10, 30, 200, 20, (player.health / player.max_health) * 100)
+
+    # Save and load game
+    if pygame.key.get_pressed()[pygame.K_s]:
+        save_game(player, enemies, items)
+    if pygame.key.get_pressed()[pygame.K_l]:
+        load_game()
+
+    # Update the display
+    pygame.display.flip()
+
+# Quit Pygame
+pygame.quit()
